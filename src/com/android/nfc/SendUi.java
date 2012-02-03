@@ -16,8 +16,6 @@
 
 package com.android.nfc;
 
-import com.android.nfc3.R;
-
 import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
@@ -77,9 +75,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
     static final int TEXT_HINT_ALPHA_DURATION_MS = 500;
     static final int TEXT_HINT_ALPHA_START_DELAY_MS = 300;
 
-    static final float[] BACKGROUND_SCALE_RANGE = {2.0f, 1.0f};
-    static final int BACKGROUND_SCALE_DURATION_MS = 5000;
-
     static final int FINISH_SCALE_UP = 0;
     static final int FINISH_SLIDE_OUT = 1;
 
@@ -94,7 +89,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
     final StatusBarManager mStatusBarManager;
     final View mScreenshotLayout;
     final ImageView mScreenshotView;
-    final ImageView mBackgroundImage;
     final TextureView mTextureView;
     final TextView mTextHint;
     final Callback mCallback;
@@ -104,7 +98,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
     final ObjectAnimator mFadeInAnimator;
     final ObjectAnimator mHintAnimator;
     final AnimatorSet mSuccessAnimatorSet;
-    final ObjectAnimator mBackgroundAnimator;
     final boolean mHardwareAccelerated;
 
     Bitmap mScreenshotBitmap;
@@ -140,18 +133,12 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
         mTextureView = (TextureView) mScreenshotLayout.findViewById(R.id.fireflies);
         mTextureView.setSurfaceTextureListener(this);
 
-        mBackgroundImage = (ImageView) mScreenshotLayout.findViewById(R.id.back);
         // We're only allowed to use hardware acceleration if
         // isHighEndGfx() returns true - otherwise, we're too limited
         // on resources to do it.
         mHardwareAccelerated = ActivityManager.isHighEndGfx(mDisplay);
         int hwAccelerationFlags = mHardwareAccelerated ?
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED : 0;
-
-        if (!mHardwareAccelerated) {
-            // Only show background in case we're not hw-accelerated
-            mBackgroundImage.setVisibility(View.VISIBLE);
-        }
 
         mWindowLayoutParams = new WindowManager.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 0,
@@ -208,12 +195,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
 
         mSuccessAnimatorSet = new AnimatorSet();
         mSuccessAnimatorSet.playSequentially(mFastCloneAnimator, mFadeInAnimator);
-
-        scaleUpX = PropertyValuesHolder.ofFloat("scaleX", BACKGROUND_SCALE_RANGE);
-        scaleUpY = PropertyValuesHolder.ofFloat("scaleY", BACKGROUND_SCALE_RANGE);
-        mBackgroundAnimator = ObjectAnimator.ofPropertyValuesHolder(mBackgroundImage, scaleUpX, scaleUpY);
-        mBackgroundAnimator.setInterpolator(new DecelerateInterpolator(2.0f));
-        mBackgroundAnimator.setDuration(BACKGROUND_SCALE_DURATION_MS);
 
         mAttached = false;
     }
@@ -274,10 +255,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
 
         mAttached = true;
         mPreAnimator.start();
-
-        if (!mHardwareAccelerated) {
-            mBackgroundAnimator.start();
-        }
     }
 
     /** Show starting send animation */
@@ -356,6 +333,9 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
         if (!mAttached) {
             return;
         }
+        // Immediately set to false, to prevent .cancel() calls
+        // below from immediately calling into dismiss() again.
+        mAttached = false;
         mPreAnimator.cancel();
         mSlowSendAnimator.cancel();
         mFastCloneAnimator.cancel();
@@ -363,7 +343,6 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
         mScaleUpAnimator.cancel();
         mWindowManager.removeView(mScreenshotLayout);
         mStatusBarManager.disable(StatusBarManager.DISABLE_NONE);
-        mAttached = false;
         releaseScreenshot();
     }
 
@@ -394,16 +373,19 @@ public class SendUi implements Animator.AnimatorListener, View.OnTouchListener,
         // take screenshots only in the natural orientation of the device :!)
 
         mDisplay.getRealMetrics(mDisplayMetrics);
+        boolean hasNavBar =  mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_showNavigationBar);
 
         float[] dims = {mDisplayMetrics.widthPixels, mDisplayMetrics.heightPixels};
         float degrees = getDegreesForRotation(mDisplay.getRotation());
         final int statusBarHeight = mContext.getResources().getDimensionPixelSize(
                                         com.android.internal.R.dimen.status_bar_height);
+
         // Navbar has different sizes, depending on orientation
-        final int navBarHeight = mContext.getResources().getDimensionPixelSize(
-                                        com.android.internal.R.dimen.navigation_bar_height);
-        final int navBarWidth = mContext.getResources().getDimensionPixelSize(
-                                        com.android.internal.R.dimen.navigation_bar_width);
+        final int navBarHeight = hasNavBar ? mContext.getResources().getDimensionPixelSize(
+                                        com.android.internal.R.dimen.navigation_bar_height) : 0;
+        final int navBarWidth = hasNavBar ? mContext.getResources().getDimensionPixelSize(
+                                        com.android.internal.R.dimen.navigation_bar_width) : 0;
 
         boolean requiresRotation = (degrees > 0);
         if (requiresRotation) {
